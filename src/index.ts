@@ -41,6 +41,11 @@ async function createRedirectForThisUrl(request: Request, env: Env) {
   console.log(`Created new short code '${redirect}' for URL ${createForUrl}`);
   await env.shrtn_redirects.put(redirect, createForUrl);
   await env.shrtn_redirects_rev.put(createForUrl, redirect);
+
+  if (request.headers.get('accept')?.trim().indexOf('application/json') === 0) {
+    return { redirect };
+  }
+
   return html(`<!DOCTYPE html><html><head><title>shrtn /${redirect}</title></head><body>
 		<a href="/${redirect}"><span id="a"></span>/${redirect}</a><script>
 		document.addEventListener('DOMContentLoaded', () => 
