@@ -1,9 +1,9 @@
 import { customAlphabet } from 'nanoid';
-import { AutoRouter, error, html } from 'itty-router';
+import { AutoRouter, html } from 'itty-router';
 import { Request } from '@cloudflare/workers-types';
 
 const CREATE_PATH_PRE = '/+';
-const CONFIGURABLES_DEFAULTS: { [key: string]: string | Number } = {
+const CONFIGURABLES_DEFAULTS: { [key: string]: string | number } = {
   ID_ALPHABET: '1234567890abcdefghijklmnopqrstuvwxyz',
   ID_SMALLEST_SIZE: 2,
 };
@@ -18,7 +18,7 @@ async function createRedirectForThisUrl(createForUrl: string, request: Request, 
   try {
     // may be better libraries for this, but :shrug:...
     new URL(createForUrl);
-  } catch (e) {
+  } catch {
     return new Response(`"${createForUrl}" is not a valid URL!`, { status: 500 });
   }
 
