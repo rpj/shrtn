@@ -12,7 +12,9 @@ A dead simple URL shortener built with Cloudflare Worker & KV Store.
 
 ## Usage
 
-Create with `/+...` where `...` is the URL to shorten.
+Create with (GET) `/+...` where `...` is the URL to shorten.
+
+URLs with fragments (`#...`) cannot be created with above method: instead POST to `/add` with the URL to be shortened as the body (plaintext).
 
 ### Configurables
 

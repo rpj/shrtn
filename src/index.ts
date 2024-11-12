@@ -12,14 +12,9 @@ async function configurable(env: Env, configName: string) {
   return (await env.shrtn_config.get(configName)) ?? CONFIGURABLES_DEFAULTS[configName];
 }
 
-async function createRedirectForThisUrl(request: Request, env: Env) {
+async function createRedirectForThisUrl(createForUrl: string, request: Request, env: Env) {
   const getConfig = configurable.bind(null, env);
-  const slicePoint = request.url.indexOf(CREATE_PATH_PRE);
-  if (slicePoint === -1) {
-    return new Response(request.url, { status: 404 });
-  }
 
-  const createForUrl = request.url.slice(slicePoint + CREATE_PATH_PRE.length);
   try {
     // may be better libraries for this, but :shrug:...
     new URL(createForUrl);
@@ -67,7 +62,16 @@ const router = AutoRouter();
 
 router
   .get("/:code", shortCode)
-  .get(CREATE_PATH_PRE + "*", createRedirectForThisUrl)
-  .all('*', () => error(404));
+  .post("/add", async (request: Request, env: Env) => createRedirectForThisUrl(
+    Buffer((await request.body?.getReader().read())?.value)?.toString('utf8'),
+    request, env
+  ))
+  .get(CREATE_PATH_PRE + "*", async (request: Request, env: Env) => {
+    const slicePoint = request.url.indexOf(CREATE_PATH_PRE);
+    if (slicePoint === -1) {
+      return new Response(request.url, { status: 404 });
+    }
+    return createRedirectForThisUrl(request.url.slice(slicePoint + CREATE_PATH_PRE.length), request, env);
+  });
 
 export default router;
