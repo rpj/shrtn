@@ -4,4 +4,5 @@ interface Env {
 	shrtn_redirects: KVNamespace;
 	shrtn_redirects_rev: KVNamespace;
 	shrtn_config: KVNamespace;
+	shrtn_auth: KVNamespace;
 }

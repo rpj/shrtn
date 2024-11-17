@@ -1,22 +1,16 @@
 import { customAlphabet } from 'nanoid';
 import { AutoRouter, html } from 'itty-router';
 import { Request } from '@cloudflare/workers-types';
+import config from './config';
+import mustache from 'mustache';
 
+const AUTH_ENABLED = true;
 const CREATE_PATH_PRE = '/+';
-const CONFIGURABLES_DEFAULTS: { [key: string]: string | number } = {
-  ID_ALPHABET: '1234567890abcdefghijklmnopqrstuvwxyz',
-  ID_SMALLEST_SIZE: 2,
-};
-
-async function configurable(env: Env, configName: string) {
-  return (await env.shrtn_config.get(configName)) ?? CONFIGURABLES_DEFAULTS[configName];
-}
 
 async function createRedirectForThisUrl(createForUrl: string, request: Request, env: Env) {
-  const getConfig = configurable.bind(null, env);
+  const getConfig = config.bind(null, env);
 
   try {
-    // may be better libraries for this, but :shrug:...
     new URL(createForUrl);
   } catch {
     return new Response(`"${createForUrl}" is not a valid URL!`, { status: 500 });
@@ -31,21 +25,19 @@ async function createRedirectForThisUrl(createForUrl: string, request: Request, 
         redirect = newTry;
       }
     }
+
+    console.log(`Created new short code '${redirect}' for URL ${createForUrl}`);
+    await Promise.all([
+      env.shrtn_redirects.put(redirect, createForUrl),
+      env.shrtn_redirects_rev.put(createForUrl, redirect)
+    ]);
   }
 
-  console.log(`Created new short code '${redirect}' for URL ${createForUrl}`);
-  await env.shrtn_redirects.put(redirect, createForUrl);
-  await env.shrtn_redirects_rev.put(createForUrl, redirect);
-
-  if (request.headers.get('accept')?.trim().indexOf('application/json') === 0) {
+  if (request.method === 'POST' || request.headers.get('accept')?.trim().indexOf('application/json') === 0) {
     return { redirect };
   }
 
-  return html(`<!DOCTYPE html><html><head><title>shrtn /${redirect}</title></head><body>
-		<a href="/${redirect}"><span id="a"></span>/${redirect}</a><script>
-		document.addEventListener('DOMContentLoaded', () => 
-			(document.getElementById('a').innerText = window.location.origin));
-		</script></body></html>`);
+  return html(mustache.render(await getConfig('CODE_CREATE_SUCCESS_MUSTACHE_HTML') as string, { redirect }));
 }
 
 async function shortCode(request: Request, env: Env) {
@@ -58,19 +50,51 @@ async function shortCode(request: Request, env: Env) {
   return new Response(request.params.code, { status: 404 });
 }
 
-const router = AutoRouter();
+async function checkAuth(request: Request, env: Env) {
+  let auth = request.headers.get('Authorization');
+
+  if (!auth) {
+    const urlPath = (new URL(request.url)).pathname.slice(1);
+    const firstSlashIndex = urlPath.indexOf('/');
+
+    if (firstSlashIndex !== -1 && urlPath[firstSlashIndex + 1] === CREATE_PATH_PRE[1]) {
+      auth = `Basic ${urlPath.slice(0, firstSlashIndex)}`;
+    }
+  }
+
+  if (!auth || auth.indexOf('Basic ') !== 0) {
+    return new Response(null, { status: 401, headers: { 'WWW-Authenticate': 'Basic' } });
+  }
+
+  const authToken = auth.replace('Basic ', '');
+  const authStr = Buffer.from(authToken, 'base64').toString();
+  const [user, passphrase] = authStr.split(':');
+
+  if (!user?.length || !passphrase?.length || passphrase !== (await env.shrtn_auth.get(user))) {
+    console.error(`Bad user "${user}", passphrase "${passphrase}"`, request.url, request.headers);
+    return new Response(null, { status: 403 });
+  }
+}
+
+const router = AutoRouter().get("/:code", shortCode);
+
+if (AUTH_ENABLED) {
+  console.log('Authorization enabled');
+  router.all("*", checkAuth);
+}
 
 router
-  .get("/:code", shortCode)
   .post("/add", async (request: Request, env: Env) => createRedirectForThisUrl(
     Buffer((await request.body?.getReader().read())?.value)?.toString('utf8'),
     request, env
   ))
-  .get(CREATE_PATH_PRE + "*", async (request: Request, env: Env) => {
+  .get(`${CREATE_PATH_PRE}*`, async (request: Request, env: Env) => {
     const slicePoint = request.url.indexOf(CREATE_PATH_PRE);
+
     if (slicePoint === -1) {
       return new Response(request.url, { status: 404 });
     }
+
     return createRedirectForThisUrl(request.url.slice(slicePoint + CREATE_PATH_PRE.length), request, env);
   });
 
